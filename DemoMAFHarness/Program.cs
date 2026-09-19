@@ -92,8 +92,18 @@ namespace DemoMAFHarness
                 }
             };
 
+            // Start immediately in execute mode instead of plan mode.
+            var agentModeProviderOptions = new AgentModeProviderOptions
+            {
+                DefaultMode = "execute"
+            };
+
             var harnessAgentOptions = new HarnessAgentOptions
             {
+                Name = "DecisionHarnessAgent",
+                DisableWebSearch = true,
+
+                AgentModeProviderOptions = agentModeProviderOptions,
                 ChatOptions = chatOptions
             };
 
