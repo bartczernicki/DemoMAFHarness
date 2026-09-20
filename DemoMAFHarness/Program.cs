@@ -28,18 +28,21 @@ namespace DemoMAFHarness
                 return;
             }
 
+            // Keep one tracing pipeline alive for the entire selected demo.
+            using var tracerProvider = HarnessTracing.CreateFileTracerProvider(Settings.TracingSourceName, Settings.TelemetryDirectory);
+
             // Load the configuration settings from the local.settings.json and secrets.settings.json files
             // The secrets.settings.json file is used to store sensitive information such as API keys
             var configurationBuilder = new ConfigurationBuilder()
                 .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("local.settings.json", optional: true, reloadOnChange: true)
-                .AddJsonFile("secrets.settings.json", optional: true, reloadOnChange: true);
+                .AddJsonFile(Settings.LocalConfigurationFile, optional: Settings.ConfigurationFilesOptional, reloadOnChange: Settings.ReloadConfigurationOnChange)
+                .AddJsonFile(Settings.SecretsConfigurationFile, optional: Settings.ConfigurationFilesOptional, reloadOnChange: Settings.ReloadConfigurationOnChange);
             var config = configurationBuilder.Build();
 
             // Azure OpenAI Connection Info
-            var azureOpenAIEndpoint = config["AzureOpenAI:Endpoint"];
-            var azureOpenAIAPIKey = config["AzureOpenAI:APIKey"];
-            var azureOpenAIModelDeploymentName = config["AzureOpenAI:ModelDeploymentName"];
+            var azureOpenAIEndpoint = config[Settings.AzureOpenAIEndpointKey];
+            var azureOpenAIAPIKey = config[Settings.AzureOpenAIApiKeyKey];
+            var azureOpenAIModelDeploymentName = config[Settings.AzureOpenAIModelDeploymentNameKey];
 
             var apiKeyCredential = new ApiKeyCredential(azureOpenAIAPIKey!);
 
@@ -47,42 +50,48 @@ namespace DemoMAFHarness
                 apiKeyCredential,
                 new OpenAIClientOptions
                 {
-                    Endpoint = new Uri($"{azureOpenAIEndpoint!.TrimEnd('/')}/openai/v1"),
-                    RetryPolicy = new ClientRetryPolicy(maxRetries: 5)
+                    Endpoint = new Uri($"{azureOpenAIEndpoint!.TrimEnd('/')}{Settings.OpenAIApiPath}"),
+                    RetryPolicy = new ClientRetryPolicy(maxRetries: Settings.MaxRetries)
                 });
 
             switch (selection)
             {
                 case "1":
-                    using (var chatClient = azureOpenAIClient.GetChatClient(azureOpenAIModelDeploymentName).AsIChatClient())
+                    using (var chatClient = new OpenTelemetryChatClient(
+                        azureOpenAIClient.GetChatClient(azureOpenAIModelDeploymentName).AsIChatClient(),
+                        logger: null,
+                        sourceName: Settings.TracingSourceName))
                     {
-                        WriteColored($"\nInstructions:\n{ResearchPrompts.BasicInstructions}\n", ConsoleColor.Magenta);
-                        WriteColored($"Prompt:\n{ResearchPrompts.SampleResearchPrompt}\n", ConsoleColor.Cyan);
-                        WriteColored("AI response:", ConsoleColor.Green);
+                        WriteColored($"\nInstructions:\n{ResearchPrompts.BasicInstructions}\n", Settings.InstructionsColor);
+                        WriteColored($"Prompt:\n{ResearchPrompts.SampleResearchPrompt}\n", Settings.PromptColor);
+                        WriteColored("AI response:", Settings.ResponseColor);
                         var response = await chatClient.GetResponseAsync(
                         [
                             new ChatMessage(ChatRole.System, ResearchPrompts.BasicInstructions),
                             new ChatMessage(ChatRole.User, ResearchPrompts.SampleResearchPrompt),
                         ]);
-                        WriteColored(response.Text, ConsoleColor.Green);
+                        WriteColored(response.Text, Settings.ResponseColor);
                     }
                     break;
                 case "2":
                     using (var chatClient = azureOpenAIClient.GetChatClient(azureOpenAIModelDeploymentName).AsIChatClient())
                     {
-                        AIAgent researchAnalystAgent = new ChatClientAgent(chatClient, instructions: ResearchPrompts.BasicInstructions);
-                        WriteColored($"\nInstructions:\n{ResearchPrompts.BasicInstructions}\n", ConsoleColor.Magenta);
-                        WriteColored($"Prompt:\n{ResearchPrompts.SampleResearchPrompt}\n", ConsoleColor.Cyan);
-                        WriteColored("AI response:", ConsoleColor.Green);
+                        using var researchAnalystAgent = new OpenTelemetryAgent(
+                            new ChatClientAgent(chatClient, instructions: ResearchPrompts.BasicInstructions, name: Settings.ResearchAnalystAgentName),
+                            sourceName: Settings.TracingSourceName,
+                            autoWireChatClient: Settings.AutoWireChatClientTelemetry);
+                        WriteColored($"\nInstructions:\n{ResearchPrompts.BasicInstructions}\n", Settings.InstructionsColor);
+                        WriteColored($"Prompt:\n{ResearchPrompts.SampleResearchPrompt}\n", Settings.PromptColor);
+                        WriteColored("AI response:", Settings.ResponseColor);
                         var response = await researchAnalystAgent.RunAsync(ResearchPrompts.SampleResearchPrompt);
-                        WriteColored(response.Text, ConsoleColor.Green);
+                        WriteColored(response.Text, Settings.ResponseColor);
                     }
                     break;
                 case "3":
-                    await RunResearchHarnessAsync(azureOpenAIClient, azureOpenAIModelDeploymentName!, initialMode: "execute");
+                    await RunResearchHarnessAsync(azureOpenAIClient, azureOpenAIModelDeploymentName!, initialMode: Settings.ExecuteMode);
                     break;
                 case "4":
-                    await RunResearchHarnessAsync(azureOpenAIClient, azureOpenAIModelDeploymentName!, initialMode: "plan");
+                    await RunResearchHarnessAsync(azureOpenAIClient, azureOpenAIModelDeploymentName!, initialMode: Settings.PlanMode);
                     break;
             }
         }
@@ -104,27 +113,27 @@ namespace DemoMAFHarness
 
               MAF Agents Demo
 
-              """, ConsoleColor.Yellow);
+              """, Settings.BannerColor);
 
             WriteColored("""
-              1) Direct model call
-              2) Simple research analyst agent
-              3) Research harness — execute mode
-              4) Research harness — plan mode
+              1) Direct Model Call
+              2) Research Analyst Agent
+              3) Research Harness — Execute Mode
+              4) Research Harness — Plan Mode
               0) Exit
 
-              """, ConsoleColor.Cyan);
+              """, Settings.MenuColor);
 
             while (true)
             {
-                WriteColored("Select an option (0-4): ", ConsoleColor.Cyan, newLine: false);
+                WriteColored("Select an option (0-4): ", Settings.MenuColor, newLine: false);
                 var selection = Console.ReadLine()?.Trim();
                 if (selection is null or "0" or "1" or "2" or "3" or "4")
                 {
                     return selection;
                 }
 
-                WriteColored("Invalid selection. Enter a number from 0 to 4.", ConsoleColor.Cyan);
+                WriteColored("Invalid selection. Enter a number from 0 to 4.", Settings.MenuColor);
             }
         }
 
@@ -151,12 +160,6 @@ namespace DemoMAFHarness
 
         private static async Task RunResearchHarnessAsync(OpenAIClient client, string modelDeploymentName, string initialMode)
         {
-            const int MaxContextWindowTokens = 1_050_000;
-            const int MaxOutputTokens = 128_000;
-            const string TracingSourceName = "Harness.Research";
-
-            // Capture agent activity and HTTP requests for the selected harness session.
-            using var tracerProvider = HarnessTracing.CreateFileTracerProvider(TracingSourceName);
             using var responsesChatClient = client.GetResponsesClient().AsIChatClient(modelDeploymentName);
 
             var chatOptions = new ChatOptions
@@ -165,14 +168,13 @@ namespace DemoMAFHarness
                 // Add a local web browsing tool that converts html to markdown.
                 Tools =
                 [
-                    new WebBrowsingTool(                        
-                        new WebBrowsingToolOptions { AllowPublicNetworks = true }),
+                    new WebBrowsingTool(
+                        new WebBrowsingToolOptions { AllowPublicNetworks = Settings.AllowPublicNetworks }),
                 ],
-                MaxOutputTokens = MaxOutputTokens,
+                MaxOutputTokens = Settings.MaxOutputTokens,
                 Reasoning = new ReasoningOptions
                 {
-                    Effort = ReasoningEffort.Medium,
-                    // Output = ReasoningOutput.Summary
+                    Effort = Settings.ResearchReasoningEffort,
                 }
             };
 
@@ -184,26 +186,25 @@ namespace DemoMAFHarness
 
             var harnessAgentOptions = new HarnessAgentOptions
             {
-                Name = "ResearchAnalystHarnessAgent",
-                MaxContextWindowTokens = MaxContextWindowTokens,
-                MaxOutputTokens = MaxOutputTokens,
-                OpenTelemetrySourceName = TracingSourceName,        // Use our custom source name so spans are captured by the TracerProvider above.
-                FileMemoryStore = new FileSystemAgentFileStore(Path.Combine(AppContext.BaseDirectory, "agent-files")), // Configure the file memory provider to store files in a local folder called "agent-files".
+                Name = Settings.ResearchAnalystHarnessAgentName,
+                MaxContextWindowTokens = Settings.MaxContextWindowTokens,
+                MaxOutputTokens = Settings.MaxOutputTokens,
+                OpenTelemetrySourceName = Settings.TracingSourceName,
+                FileMemoryStore = new FileSystemAgentFileStore(Settings.AgentFilesDirectory),
                 LoopEvaluators =
                     [
-                        new TodoCompletionLoopEvaluator(new TodoCompletionLoopEvaluatorOptions { Modes = ["execute"] }),
+                        new TodoCompletionLoopEvaluator(new TodoCompletionLoopEvaluatorOptions { Modes = [Settings.ExecuteMode] }),
                     ],
-                LoopAgentOptions = new LoopAgentOptions { MaxIterations = 10 }, // Safety cap on the number of autonomous passes per turn.
+                LoopAgentOptions = new LoopAgentOptions { MaxIterations = Settings.MaxIterations },
 
                 AgentModeProviderOptions = agentModeProviderOptions,
                 ChatOptions = chatOptions,
 
-                DisableOpenTelemetry = false,  // Enable OpenTelemetry tracing for the harness agent to capture spans for all agent activity.
-                DisableAgentModeProvider = false, // Enable the agent mode provider to allow switching between plan and execute modes.
-                DisableTodoProvider = false, // Enable the todo provider to allow the agent to create and manage a todo list for planning and execution.
-                DisableFileMemory = false, // Enable the file memory provider to allow the agent to store and retrieve files in the local "agent-files" folder.
-                DisableToolAutoApproval = false, // Enable tool auto-approval to allow the agent to automatically approve tool calls without user intervention.
-                // DisableWebSearch = true,
+                DisableOpenTelemetry = Settings.DisableOpenTelemetry,
+                DisableAgentModeProvider = Settings.DisableAgentModeProvider,
+                DisableTodoProvider = Settings.DisableTodoProvider,
+                DisableFileMemory = Settings.DisableFileMemory,
+                DisableToolAutoApproval = Settings.DisableToolAutoApproval,
             };
 
             // Use the Responses API for the research harness's reasoning and web research capabilities.
@@ -218,17 +219,17 @@ namespace DemoMAFHarness
                 new HarnessConsoleOptions
                 {
                     InitialMessage = $"Instructions:\n{ResearchPrompts.HarnessInstructions}\n",
-                    InitialMessageColor = ConsoleColor.Magenta,
+                    InitialMessageColor = Settings.InstructionsColor,
                     Observers =
                     [
                         new OpenAIResponsesWebSearchDisplayObserver(),
                         new OpenAIResponsesErrorObserver(),
                         .. HarnessConsoleOptions.BuildObserversWithPlanning(
                             researchAnalystHarnessAgent,
-                            planModeName: "plan",
-                            executionModeName: "execute",
-                            maxContextWindowTokens: MaxContextWindowTokens,
-                            maxOutputTokens: MaxOutputTokens,
+                            planModeName: Settings.PlanMode,
+                            executionModeName: Settings.ExecuteMode,
+                            maxContextWindowTokens: Settings.MaxContextWindowTokens,
+                            maxOutputTokens: Settings.MaxOutputTokens,
                             toolFormatters: [new DownloadUriToolFormatter(), .. ToolCallFormatter.BuildDefaultToolFormatters()])
                     ],
                     CommandHandlers = HarnessConsoleOptions.BuildDefaultCommandHandlers(researchAnalystHarnessAgent),
