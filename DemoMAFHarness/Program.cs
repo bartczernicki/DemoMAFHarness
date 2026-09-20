@@ -1,17 +1,23 @@
 ﻿using Azure;
+using DemoMAFHarness.Tools;
+using Harness.Shared.Console;
+using Harness.Shared.Console.OpenAI;
+using Harness.Shared.Console.ToolFormatters;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Json;
 using OpenAI;
-using OpenAI.Responses;
 using OpenAI.Chat;
+using OpenAI.Responses;
 using System.ClientModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
+#pragma warning disable OPENAI001 // Suppress experimental API warnings for Responses API usage.
+#pragma warning disable MAAI001  // Suppress experimental API warnings for Agents AI experiments.
 
 namespace DemoMAFHarness
 {
@@ -19,6 +25,15 @@ namespace DemoMAFHarness
     {
         static async Task Main(string[] args)
         {
+            const int MaxContextWindowTokens = 1_050_000;
+            const int MaxOutputTokens = 128_000;
+            const string TracingSourceName = "Harness.Research";
+
+            // Set up OpenTelemetry tracing that writes spans to a text file.
+            // This captures all agent activity (tool calls, model invocations, compaction, etc.)
+            // as well as HTTP requests made by the underlying HttpClient transport.
+            using var tracerProvider = HarnessTracing.CreateFileTracerProvider(TracingSourceName);
+
             Console.WriteLine("Hello MAF Agents");
 
             // Load the configuration settings from the local.settings.json and secrets.settings.json files
@@ -49,7 +64,7 @@ namespace DemoMAFHarness
                 });
 
             // Instructions for the agent to follow when responding to prompts
-            var decisionInstructions = "You are a helpful decision agent that provides insights and recommendations based on decision-making frameworks.";
+            var decisionInstructions =  "You are a helpful decision agent that provides insights and recommendations based on decision-making frameworks.";
 
             // A simple Decision Intelligence prompt to help with describing decision-making frameworks
             var simpleDecisionPrompt = """
@@ -57,11 +72,34 @@ namespace DemoMAFHarness
             Briefly describe how each decision-making framework supports better analysis and reasoning in various scenarios. 
             """;
 
+            var researchInsructions =
+                    """
+                    ## Research Assistant Instructions
+
+                    You are a research assistant. When given a research topic, research it thoroughly using web search and web browsing.
+                    Use your knowledge to form good search queries and hypotheses, but always verify claims with the tools available to you rather than relying on memory alone.
+
+                    ### Research quality
+
+                    Consult multiple sources when possible and cross-reference key claims.
+                    When sources disagree, note the discrepancy and explain which source you consider more reliable and why.
+                    If a web page fails to load or a search returns irrelevant results, try alternative search queries or sources before moving on.
+                    Track your sources — you will need them when presenting results.
+
+                    ### Presenting results
+
+                    When presenting your final findings:
+                    - Use Markdown formatting for clarity.
+                    - Use clear sections with headings for each major topic or sub-question.
+                    - Cite your sources inline (e.g., "According to [source name](URL), ...").
+                    - End with a brief summary of key takeaways.
+                    - In addition to returning the results to the user, save the final research report to file memory so it survives compaction and can be referenced later.
+                    """;
+
             // Create a chat client for the Azure OpenAI model deployment (Uses Chat Completions API)
             var chatClient = azureOpenAIClient.GetChatClient(azureOpenAIModelDeploymentName)
                 .AsIChatClient();
             // Create a responses client for the Azure OpenAI model deployment (Uses Responses API)
-            #pragma warning disable OPENAI001
             var responsesClient = azureOpenAIClient.GetResponsesClient();
             var responsesChatClient = responsesClient.AsIChatClient(azureOpenAIModelDeploymentName);
 
@@ -84,35 +122,72 @@ namespace DemoMAFHarness
             // 3) Add a simple harness decision-making agent to demonstrate the use of an agent for decision-making tasks
             var chatOptions = new ChatOptions
             {
-                Instructions = decisionInstructions,
+                Instructions = researchInsructions,
+                // Add a local web browsing tool that converts html to markdown.
+                Tools =
+                [
+                    new WebBrowsingTool(                        
+                        new WebBrowsingToolOptions { AllowPublicNetworks = true }),
+                ],
+                MaxOutputTokens = MaxOutputTokens,
                 Reasoning = new ReasoningOptions
                 {
                     Effort = ReasoningEffort.Medium,
-                    Output = ReasoningOutput.Summary
+                    // Output = ReasoningOutput.Summary
                 }
             };
 
             // Start immediately in execute mode instead of plan mode.
             var agentModeProviderOptions = new AgentModeProviderOptions
             {
-                DefaultMode = "execute"
+                // DefaultMode = "execute"
             };
 
             var harnessAgentOptions = new HarnessAgentOptions
             {
                 Name = "DecisionHarnessAgent",
-                DisableWebSearch = true,
+                MaxContextWindowTokens = MaxContextWindowTokens,
+                MaxOutputTokens = MaxOutputTokens,
+                OpenTelemetrySourceName = TracingSourceName,        // Use our custom source name so spans are captured by the TracerProvider above.
+                FileMemoryStore = new FileSystemAgentFileStore(Path.Combine(AppContext.BaseDirectory, "agent-files")), // Configure the file memory provider to store files in a local folder called "agent-files".
+                LoopEvaluators =
+                    [
+                        new TodoCompletionLoopEvaluator(new TodoCompletionLoopEvaluatorOptions { Modes = ["execute"] }),
+                    ],
+                LoopAgentOptions = new LoopAgentOptions { MaxIterations = 10 }, // Safety cap on the number of autonomous passes per turn.
 
                 AgentModeProviderOptions = agentModeProviderOptions,
                 ChatOptions = chatOptions
+
+                // DisableWebSearch = true,
             };
 
             // Ensure to use the Responses API for the harness agent to enable reasoning and decision-making capabilities
             AIAgent decisionHarnessAgent = responsesChatClient.AsHarnessAgent(harnessAgentOptions);
-            var decisionHarnessAgentResponse = await decisionHarnessAgent.RunAsync(simpleDecisionPrompt);
-            Console.WriteLine(decisionHarnessAgentResponse.Text);
+
+            //var decisionHarnessAgentResponse = await decisionHarnessAgent.RunAsync(simpleDecisionPrompt);
+            //Console.WriteLine(decisionHarnessAgentResponse.Text);
 
             // https://github.com/microsoft/agent-framework/tree/main/dotnet/samples/02-agents/Harness
+
+            // Run the interactive console session using the shared HarnessConsole helper.
+            await HarnessConsole.RunAgentAsync(
+                decisionHarnessAgent,
+                userPrompt: "Enter a research topic to get started.",
+                new HarnessConsoleOptions
+                {
+                    Observers = [
+                        new OpenAIResponsesWebSearchDisplayObserver(),
+            new OpenAIResponsesErrorObserver(),
+            .. HarnessConsoleOptions.BuildObserversWithPlanning(
+                decisionHarnessAgent,
+                planModeName: "plan",
+                executionModeName: "execute",
+                maxContextWindowTokens: MaxContextWindowTokens,
+                maxOutputTokens: MaxOutputTokens,
+                toolFormatters: [new DownloadUriToolFormatter(), .. ToolCallFormatter.BuildDefaultToolFormatters()])],
+                    CommandHandlers = HarnessConsoleOptions.BuildDefaultCommandHandlers(decisionHarnessAgent),
+                });
         }
     }
 }

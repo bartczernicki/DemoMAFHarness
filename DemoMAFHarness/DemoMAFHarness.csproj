@@ -20,6 +20,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Harness_Shared_Console\Harness_Shared_Console.csproj" />
+    <ProjectReference Include="..\Harness_Shared_Console_OpenAI\Harness_Shared_Console_OpenAI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="secrets.settings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

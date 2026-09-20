@@ -3,4 +3,5 @@
   <Project Path="ConsoleReactiveFramework/ConsoleReactiveFramework.csproj" />
   <Project Path="DemoMAFHarness/DemoMAFHarness.csproj" />
   <Project Path="Harness_Shared_Console/Harness_Shared_Console.csproj" />
+  <Project Path="Harness_Shared_Console_OpenAI/Harness_Shared_Console_OpenAI.csproj" />
 </Solution>
