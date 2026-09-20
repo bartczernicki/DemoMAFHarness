@@ -111,7 +111,7 @@ internal sealed class HarnessConsoleUXStateDriver : IUXStateDriver
         foreach (var msg in pending)
         {
             string text = msg.Text ?? string.Empty;
-            newQueued.Add(RenderEntry($"  💬 {text}\n", ConsoleColor.DarkGray));
+            newQueued.Add(RenderEntry($"  💬 {text}\n", ConsoleColor.Cyan));
         }
 
         this.UpdateState(s => s with { QueuedItems = newQueued });
@@ -249,7 +249,7 @@ internal sealed class HarnessConsoleUXStateDriver : IUXStateDriver
             List<string> snapshot = this.AppendOutputEntriesAndSnapshot(new OutputEntry(
                 OutputEntryType.UserInput,
                 $"\nYou: {text}\n\n",
-                ConsoleColor.Green));
+                ConsoleColor.Cyan));
             return s with { ScrollAreaContentItems = snapshot };
         });
     }
@@ -289,7 +289,8 @@ internal sealed class HarnessConsoleUXStateDriver : IUXStateDriver
             this._lastEntryType = OutputEntryType.StreamingText;
             this._hasReceivedAnyText = true;
 
-            ConsoleColor effectiveColor = color ?? ModeColors.Get(this._currentMode, this._modeColors);
+            // Responses keep a distinct color in both plan and execute modes.
+            ConsoleColor effectiveColor = color ?? ConsoleColor.Green;
 
             if (this._currentStreamingEntry is not null
                 && this._currentStreamingEntryIndex == this._outputItems.Count - 1)

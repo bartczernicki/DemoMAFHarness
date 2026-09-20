@@ -359,7 +359,7 @@ public class HarnessAppComponent : ConsoleReactiveComponent<ConsoleReactiveProps
                 Title = state.ListSelectionTitle,
                 Items = state.ListSelectionOptions,
                 SelectedIndex = state.ListSelectionIndex,
-                HighlightColor = state.ListHighlightColor,
+                HighlightColor = ConsoleColor.Cyan,
                 CustomTextPlaceholder = state.ListSelectionCustomTextPlaceholder,
                 CustomText = state.ListSelectionCustomInputText,
             };

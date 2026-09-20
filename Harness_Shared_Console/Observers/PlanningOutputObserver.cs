@@ -159,13 +159,13 @@ public sealed class PlanningOutputObserver : ConsoleObserver
             {
                 if (string.IsNullOrWhiteSpace(answer))
                 {
-                    string noAnswer = $"🔹 {prompt}\n   └─ {AnsiEscapes.SetForegroundColor(ConsoleColor.DarkGray)}(no answer){AnsiEscapes.ResetAttributes}";
-                    await ux.WriteInfoLineAsync(noAnswer, ConsoleColor.Gray).ConfigureAwait(false);
+                    string noAnswer = $"🔹 {prompt}\n   └─ {AnsiEscapes.SetForegroundColor(ConsoleColor.DarkCyan)}(no answer){AnsiEscapes.ResetAttributes}";
+                    await ux.WriteInfoLineAsync(noAnswer, ConsoleColor.Green).ConfigureAwait(false);
                     return null;
                 }
 
-                string formatted = $"🔹 {prompt}\n   └─ {AnsiEscapes.SetForegroundColor(ConsoleColor.Green)}{answer}{AnsiEscapes.ResetAttributes}";
-                await ux.WriteInfoLineAsync(formatted, ConsoleColor.Gray).ConfigureAwait(false);
+                string formatted = $"🔹 {prompt}\n   └─ {AnsiEscapes.SetForegroundColor(ConsoleColor.Cyan)}{answer}{AnsiEscapes.ResetAttributes}";
+                await ux.WriteInfoLineAsync(formatted, ConsoleColor.Green).ConfigureAwait(false);
 
                 return new ChatMessage(ChatRole.User, $"Q: {prompt}\nA: {answer}");
             }
@@ -200,8 +200,8 @@ public sealed class PlanningOutputObserver : ConsoleObserver
             AllowCustomText: true,
             Continuation: async (selection, ux) =>
             {
-                string formatted = $"🔹 {question.Message}\n   └─ {AnsiEscapes.SetForegroundColor(ConsoleColor.Green)}{selection}{AnsiEscapes.ResetAttributes}";
-                await ux.WriteInfoLineAsync(formatted, ConsoleColor.Gray).ConfigureAwait(false);
+                string formatted = $"🔹 {question.Message}\n   └─ {AnsiEscapes.SetForegroundColor(ConsoleColor.Cyan)}{selection}{AnsiEscapes.ResetAttributes}";
+                await ux.WriteInfoLineAsync(formatted, ConsoleColor.Green).ConfigureAwait(false);
 
                 if (selection == ApproveOption)
                 {

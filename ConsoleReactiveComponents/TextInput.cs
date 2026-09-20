@@ -15,7 +15,7 @@ public record TextInputProps : ConsoleReactiveProps
     /// <summary>Gets the text content to render to the right of the prompt.</summary>
     public string Text { get; init; } = "";
 
-    /// <summary>Gets the placeholder text shown in dark grey when <see cref="Text"/> is empty.</summary>
+    /// <summary>Gets the placeholder text shown in dark cyan when <see cref="Text"/> is empty.</summary>
     public string Placeholder { get; init; } = "";
 }
 
@@ -64,6 +64,7 @@ public class TextInput : ConsoleReactiveComponent<TextInputProps, ConsoleReactiv
         // First line: prompt + start of text
         Console.Write(AnsiEscapes.MoveCursor(props.Y, props.X));
         Console.Write(AnsiEscapes.EraseEntireLine);
+        Console.Write(AnsiEscapes.SetForegroundColor(ConsoleColor.Cyan));
         Console.Write(props.Prompt);
 
         if (textWidth <= 0 || props.Text.Length == 0)
@@ -71,12 +72,13 @@ public class TextInput : ConsoleReactiveComponent<TextInputProps, ConsoleReactiv
             // Show placeholder if text is empty
             if (props.Text.Length == 0 && props.Placeholder.Length > 0 && textWidth > 0)
             {
-                Console.Write(AnsiEscapes.SetForegroundColor(ConsoleColor.DarkGray));
+                Console.Write(AnsiEscapes.SetForegroundColor(ConsoleColor.DarkCyan));
                 Console.Write(" ");
                 Console.Write(props.Placeholder[..Math.Min(props.Placeholder.Length, textWidth - 1)]);
                 Console.Write(AnsiEscapes.ResetAttributes);
             }
 
+            Console.Write(AnsiEscapes.ResetAttributes);
             return;
         }
 
@@ -97,5 +99,6 @@ public class TextInput : ConsoleReactiveComponent<TextInputProps, ConsoleReactiv
             offset += chunk;
             row++;
         }
+        Console.Write(AnsiEscapes.ResetAttributes);
     }
 }

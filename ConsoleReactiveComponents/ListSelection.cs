@@ -40,8 +40,10 @@ public class ListSelection : ConsoleReactiveComponent<ListSelectionProps, Consol
             foreach (string line in props.Title.Split('\n'))
             {
                 Console.Write(AnsiEscapes.MoveCursor(props.Y + row, props.X));
+                Console.Write(AnsiEscapes.SetForegroundColor(ConsoleColor.Green));
                 Console.Write(line);
                 Console.Write(AnsiEscapes.EraseToEndOfLine);
+                Console.Write(AnsiEscapes.ResetAttributes);
                 row++;
             }
         }
@@ -52,6 +54,7 @@ public class ListSelection : ConsoleReactiveComponent<ListSelectionProps, Consol
         for (int i = 0; i < totalItems; i++)
         {
             Console.Write(AnsiEscapes.MoveCursor(props.Y + row, props.X));
+            Console.Write(AnsiEscapes.SetForegroundColor(ConsoleColor.Cyan));
 
             bool isSelected = i == props.SelectedIndex;
             bool isCustomTextOption = props.CustomTextPlaceholder != null && i == props.Items.Count;
@@ -79,6 +82,7 @@ public class ListSelection : ConsoleReactiveComponent<ListSelectionProps, Consol
                 }
             }
 
+            Console.Write(AnsiEscapes.ResetAttributes);
             Console.WriteLine();
             row++;
         }
@@ -110,14 +114,14 @@ public class ListSelection : ConsoleReactiveComponent<ListSelectionProps, Consol
         }
         else if (!string.IsNullOrWhiteSpace(props.CustomTextPlaceholder))
         {
-            // No text — show placeholder in dark grey (or highlight color if selected)
+            // No text — show placeholder in dark cyan (or highlight color if selected)
             if (isSelected)
             {
                 Console.Write(AnsiEscapes.SetForegroundColor(props.HighlightColor));
             }
             else
             {
-                Console.Write(AnsiEscapes.SetForegroundColor(ConsoleColor.DarkGray));
+                Console.Write(AnsiEscapes.SetForegroundColor(ConsoleColor.DarkCyan));
             }
 
             Console.Write(" ");
