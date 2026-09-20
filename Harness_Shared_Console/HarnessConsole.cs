@@ -56,11 +56,10 @@ public static class HarnessConsole
                 ux: ux),
             modeColors: options.ModeColors);
 
-        // Trigger the initial render of the component now that state is seeded.
-        component.Render();
-
         try
         {
+            // Trigger the initial render of the component now that state is seeded.
+            component.Render();
             if (!string.IsNullOrWhiteSpace(options.InitialMessage))
             {
                 await component.WriteInfoLineAsync(options.InitialMessage, options.InitialMessageColor).ConfigureAwait(false);
@@ -71,6 +70,7 @@ public static class HarnessConsole
         finally
         {
             component.Deactivate();
+            await component.Runner.ShutdownAsync().ConfigureAwait(false);
         }
 
         System.Console.ResetColor();

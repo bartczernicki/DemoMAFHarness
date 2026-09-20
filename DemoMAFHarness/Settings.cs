@@ -23,6 +23,7 @@ internal static class Settings
     public static readonly TimeSpan WebIqTimeout = TimeSpan.FromSeconds(60);
 
     public const int MaxRetries = 5;
+    public const bool StoreModelResponses = false;
     public static readonly TimeSpan AIRequestTimeout = TimeSpan.FromSeconds(200);
     public const int MaxContextWindowTokens = 1_050_000;
     public const int MaxOutputTokens = 128_000;
@@ -32,6 +33,13 @@ internal static class Settings
     public const string TracingSourceName = "Harness.Research";
     public const string ResearchAnalystAgentName = "ResearchAnalystAgent";
     public const string ResearchAnalystHarnessAgentName = "ResearchAnalystHarnessAgent";
+    public const string BackgroundResearchCoordinatorName = "ResearchCoordinator";
+    public const string BackgroundResearchWorkerName = "ResearchWorker";
+    public const int MaxConcurrentResearchWorkers = 4;
+    public const bool BackgroundWorkerDisableTodoProvider = true;
+    public const bool BackgroundWorkerDisableAgentModeProvider = true;
+    public const bool BackgroundWorkerDisableFileMemory = true;
+    public const bool BackgroundWorkerDisableToolAutoApproval = true;
     public const string PlanMode = "plan";
     public const string ExecuteMode = "execute";
 

@@ -5,6 +5,8 @@ using Harness.Shared.Console.Observers;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
+#pragma warning disable MAAI001 // Background agent session cleanup uses the harness's experimental provider API.
+
 namespace Harness.Shared.Console;
 
 /// <summary>
@@ -25,6 +27,8 @@ public sealed class HarnessAgentRunner : IDisposable
     private readonly IReadOnlyList<ConsoleObserver> _observers;
     private readonly IUXStateDriver _ux;
     private readonly SemaphoreSlim _inputGate = new(1, 1);
+    private readonly CancellationTokenSource _shutdown = new();
+    private readonly BackgroundAgentsProvider? _backgroundAgents;
 
     private AgentSession _session;
 
@@ -47,6 +51,7 @@ public sealed class HarnessAgentRunner : IDisposable
         this._commandHandlers = commandHandlers;
         this._observers = observers;
         this._ux = ux;
+        this._backgroundAgents = agent.GetService<BackgroundAgentsProvider>();
 
         this.HelpText = string.Join(
             ", ",
@@ -69,14 +74,41 @@ public sealed class HarnessAgentRunner : IDisposable
     /// synchronization is needed.
     /// </summary>
     /// <param name="newSession">The new session to use.</param>
-    internal Task ReplaceSessionAsync(AgentSession newSession)
+    internal async Task ReplaceSessionAsync(AgentSession newSession)
     {
+        if (ReferenceEquals(this._session, newSession))
+        {
+            return;
+        }
+
+        await this.ReleaseBackgroundTasksAsync().ConfigureAwait(false);
         this._session = newSession;
-        return Task.CompletedTask;
+    }
+
+    private Task ReleaseBackgroundTasksAsync() =>
+        this._backgroundAgents?.ReleaseSessionAsync(this._session, cancelRunning: true) ?? Task.CompletedTask;
+
+    /// <summary>Stops the active turn and releases background work before the host disposes clients.</summary>
+    internal async Task ShutdownAsync()
+    {
+        await this._shutdown.CancelAsync().ConfigureAwait(false);
+        await this._inputGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await this.ReleaseBackgroundTasksAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            this._inputGate.Release();
+        }
     }
 
     /// <inheritdoc/>
-    public void Dispose() => this._inputGate.Dispose();
+    public void Dispose()
+    {
+        this._shutdown.Dispose();
+        this._inputGate.Dispose();
+    }
 
     /// <summary>
     /// Handles a top-level user input submission (TextInput mode, no pending question).
@@ -87,6 +119,11 @@ public sealed class HarnessAgentRunner : IDisposable
         await this._inputGate.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (this._shutdown.IsCancellationRequested)
+            {
+                return;
+            }
+
             this._ux.WriteUserInputEcho(text);
 
             foreach (var handler in this._commandHandlers)
@@ -99,6 +136,13 @@ public sealed class HarnessAgentRunner : IDisposable
             }
 
             await this.RunAgentLoopAsync([new ChatMessage(ChatRole.User, text)]).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (this._shutdown.IsCancellationRequested)
+        {
+        }
+        catch (Exception error) when (this._backgroundAgents is not null)
+        {
+            await this.ReportBackgroundFailureAsync(error).ConfigureAwait(false);
         }
         finally
         {
@@ -113,6 +157,17 @@ public sealed class HarnessAgentRunner : IDisposable
     /// </summary>
     internal async Task OnStreamingInputAsync(string text)
     {
+        if (this._backgroundAgents is not null && text.Trim().Equals("/exit", StringComparison.OrdinalIgnoreCase))
+        {
+            this._ux.RequestShutdown();
+            return;
+        }
+
+        if (this._shutdown.IsCancellationRequested)
+        {
+            return;
+        }
+
         if (this._messageInjector is null)
         {
             return;
@@ -133,6 +188,11 @@ public sealed class HarnessAgentRunner : IDisposable
         await this._inputGate.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (this._shutdown.IsCancellationRequested)
+            {
+                return;
+            }
+
             if (messages.Count == 0)
             {
                 await this.CompleteTurnAsync().ConfigureAwait(false);
@@ -140,6 +200,13 @@ public sealed class HarnessAgentRunner : IDisposable
             }
 
             await this.RunAgentLoopAsync(messages).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (this._shutdown.IsCancellationRequested)
+        {
+        }
+        catch (Exception error) when (this._backgroundAgents is not null)
+        {
+            await this.ReportBackgroundFailureAsync(error).ConfigureAwait(false);
         }
         finally
         {
@@ -168,7 +235,8 @@ public sealed class HarnessAgentRunner : IDisposable
 
             try
             {
-                await foreach (var update in this._agent.RunStreamingAsync(nextMessages, this._session, runOptions))
+                await foreach (var update in this._agent.RunStreamingAsync(nextMessages, this._session, runOptions,
+                    cancellationToken: this._shutdown.Token))
                 {
                     if (this._modeProvider is not null)
                     {
@@ -202,6 +270,15 @@ public sealed class HarnessAgentRunner : IDisposable
 
                     lastPendingMessages = await this.SyncQueuedMessageDisplayAsync(lastPendingMessages).ConfigureAwait(false);
                 }
+            }
+            catch (OperationCanceledException) when (this._shutdown.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception error) when (this._backgroundAgents is not null)
+            {
+                await this.ReportBackgroundFailureAsync(error).ConfigureAwait(false);
+                return;
             }
             catch (Exception ex)
             {
@@ -269,6 +346,21 @@ public sealed class HarnessAgentRunner : IDisposable
     {
         this._ux.EndStreaming();
         this._ux.CurrentMode = this._modeProvider is null ? null : await this._modeProvider.GetModeAsync(this._session).ConfigureAwait(false);
+    }
+
+    private async Task ReportBackgroundFailureAsync(Exception error)
+    {
+        try
+        {
+            // Remote exception bodies can contain request details; report only the failure type.
+            await this._ux.WriteInfoLineAsync(
+                $"Background research stopped ({error.GetType().Name}). See the Telemetry log for API error details. Closing the session and canceling outstanding work.",
+                ConsoleColor.Red).ConfigureAwait(false);
+        }
+        finally
+        {
+            this._ux.RequestShutdown();
+        }
     }
 
     /// <summary>
