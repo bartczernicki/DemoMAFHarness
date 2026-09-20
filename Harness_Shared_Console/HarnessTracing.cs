@@ -15,7 +15,7 @@ public static class HarnessTracing
 {
     /// <summary>
     /// Creates a <see cref="TracerProvider"/> that captures spans from the specified source and HTTP client activity,
-    /// enriching HTTP spans with request/response headers (with credentials redacted) and bodies,
+    /// enriching HTTP spans with request/response headers (with credentials redacted) and nonstreaming bodies,
     /// and exports all spans to a timestamped text file.
     /// </summary>
     /// <param name="sourceName">The activity source name to subscribe to (e.g., "Harness.Research").</param>
@@ -46,8 +46,12 @@ public static class HarnessTracing
                     if (response.Content != null)
                     {
                         activity.SetTag("http.response.content.headers", FormatHeaders(response.Content.Headers));
-                        var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                        activity.SetTag("http.response.content.body", content);
+                        // MCP and model responses may be long-lived SSE streams. Never consume them for tracing.
+                        if (!string.Equals(response.Content.Headers.ContentType?.MediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                            activity.SetTag("http.response.content.body", content);
+                        }
                     }
                 };
             })
@@ -59,7 +63,7 @@ public static class HarnessTracing
         string.Join(Environment.NewLine, headers.Select(header =>
         {
             bool isCredential = header.Key.ToLowerInvariant() is
-                "authorization" or "proxy-authorization" or "api-key" or "x-api-key" or
+                "authorization" or "proxy-authorization" or "api-key" or "x-api-key" or "x-apikey" or
                 "ocp-apim-subscription-key" or "cookie" or "set-cookie";
             return $"{header.Key}: {(isCredential ? "[REDACTED]" : string.Join(", ", header.Value))}";
         }));

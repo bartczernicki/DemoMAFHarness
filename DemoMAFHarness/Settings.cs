@@ -13,7 +13,17 @@ internal static class Settings
     public const string AzureOpenAIModelDeploymentNameKey = "AzureOpenAI:ModelDeploymentName";
     public const string OpenAIApiPath = "/openai/v1";
 
+    public const string WebIqApiKeyKey = "AzureOpenAI:WebIQGroundingAPIKey";
+    public const string WebIqMcpEndpointKey = "WebIQ:McpEndpoint";
+    public const string WebIqMcpEndpoint = "https://api.microsoft.ai/v3/mcp/";
+    public const string WebIqApiKeyHeader = "x-apikey";
+    public const string WebIqServerName = "MAIGrounding-MCP";
+    public const string WebIqRemoteToolName = "web";
+    public const string WebIqToolName = "WebIQGrounding";
+    public static readonly TimeSpan WebIqTimeout = TimeSpan.FromSeconds(60);
+
     public const int MaxRetries = 5;
+    public static readonly TimeSpan AIRequestTimeout = TimeSpan.FromSeconds(200);
     public const int MaxContextWindowTokens = 1_050_000;
     public const int MaxOutputTokens = 128_000;
     public const int MaxIterations = 10;
@@ -36,6 +46,7 @@ internal static class Settings
     public const bool DisableTodoProvider = false;
     public const bool DisableFileMemory = false;
     public const bool DisableToolAutoApproval = false;
+    public const bool DisableWebSearch = true;
     public const bool AllowPublicNetworks = true;
 
     public const ConsoleColor BannerColor = ConsoleColor.Yellow;
@@ -43,4 +54,6 @@ internal static class Settings
     public const ConsoleColor InstructionsColor = ConsoleColor.Magenta;
     public const ConsoleColor PromptColor = ConsoleColor.Cyan;
     public const ConsoleColor ResponseColor = ConsoleColor.Green;
+    public const ConsoleColor ToolCallColor = ConsoleColor.DarkYellow;
+    public const ConsoleColor ErrorColor = ConsoleColor.Red;
 }

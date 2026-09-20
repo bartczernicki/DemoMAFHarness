@@ -20,6 +20,8 @@ namespace DemoMAFHarness
 {
     internal class Program
     {
+        private static readonly object ConsoleWriteLock = new();
+
         static async Task Main(string[] args)
         {
             var selection = ReadDemoSelection();
@@ -39,6 +41,19 @@ namespace DemoMAFHarness
                 .AddJsonFile(Settings.SecretsConfigurationFile, optional: Settings.ConfigurationFilesOptional, reloadOnChange: Settings.ReloadConfigurationOnChange);
             var config = configurationBuilder.Build();
 
+            WebIqMcpToolScope webIqTools;
+            try
+            {
+                webIqTools = await WebIqMcpToolProvider.CreateToolScopeAsync(config);
+            }
+            catch (InvalidOperationException error)
+            {
+                WriteColored(error.Message, Settings.ErrorColor);
+                Environment.ExitCode = 1;
+                return;
+            }
+            await using var webIqScope = webIqTools;
+
             // Azure OpenAI Connection Info
             var azureOpenAIEndpoint = config[Settings.AzureOpenAIEndpointKey];
             var azureOpenAIAPIKey = config[Settings.AzureOpenAIApiKeyKey];
@@ -51,47 +66,65 @@ namespace DemoMAFHarness
                 new OpenAIClientOptions
                 {
                     Endpoint = new Uri($"{azureOpenAIEndpoint!.TrimEnd('/')}{Settings.OpenAIApiPath}"),
+                    NetworkTimeout = Settings.AIRequestTimeout,
                     RetryPolicy = new ClientRetryPolicy(maxRetries: Settings.MaxRetries)
                 });
 
             switch (selection)
             {
                 case "1":
-                    using (var chatClient = new OpenTelemetryChatClient(
+                    using (var chatClient = new FunctionInvokingChatClient(new OpenTelemetryChatClient(
                         azureOpenAIClient.GetChatClient(azureOpenAIModelDeploymentName).AsIChatClient(),
                         logger: null,
-                        sourceName: Settings.TracingSourceName))
+                        sourceName: Settings.TracingSourceName)))
                     {
+                        var displayedGroundingTool = new ToolCallDisplayFunction(webIqScope.GroundingTool,
+                            notice => WriteColored(notice, Settings.ToolCallColor));
                         WriteColored($"\nInstructions:\n{ResearchPrompts.BasicInstructions}\n", Settings.InstructionsColor);
                         WriteColored($"Prompt:\n{ResearchPrompts.SampleResearchPrompt}\n", Settings.PromptColor);
-                        WriteColored("AI response:", Settings.ResponseColor);
                         var response = await chatClient.GetResponseAsync(
                         [
                             new ChatMessage(ChatRole.System, ResearchPrompts.BasicInstructions),
                             new ChatMessage(ChatRole.User, ResearchPrompts.SampleResearchPrompt),
-                        ]);
+                        ], new ChatOptions
+                        {
+                            Tools = [displayedGroundingTool],
+                            Reasoning = new ReasoningOptions { Effort = Settings.ResearchReasoningEffort },
+                        });
+                        WriteColored("\nAI Response:", Settings.ResponseColor);
                         WriteColored(response.Text, Settings.ResponseColor);
                     }
                     break;
                 case "2":
                     using (var chatClient = azureOpenAIClient.GetChatClient(azureOpenAIModelDeploymentName).AsIChatClient())
                     {
+                        var displayedGroundingTool = new ToolCallDisplayFunction(webIqScope.GroundingTool,
+                            notice => WriteColored(notice, Settings.ToolCallColor));
                         using var researchAnalystAgent = new OpenTelemetryAgent(
-                            new ChatClientAgent(chatClient, instructions: ResearchPrompts.BasicInstructions, name: Settings.ResearchAnalystAgentName),
+                            new ChatClientAgent(chatClient, new ChatClientAgentOptions
+                            {
+                                Name = Settings.ResearchAnalystAgentName,
+                                ChatOptions = new ChatOptions
+                                {
+                                    Instructions = ResearchPrompts.BasicInstructions,
+                                    Tools = [displayedGroundingTool],
+                                    Reasoning = new ReasoningOptions { Effort = Settings.ResearchReasoningEffort },
+                                },
+                            }),
                             sourceName: Settings.TracingSourceName,
                             autoWireChatClient: Settings.AutoWireChatClientTelemetry);
                         WriteColored($"\nInstructions:\n{ResearchPrompts.BasicInstructions}\n", Settings.InstructionsColor);
                         WriteColored($"Prompt:\n{ResearchPrompts.SampleResearchPrompt}\n", Settings.PromptColor);
-                        WriteColored("AI response:", Settings.ResponseColor);
                         var response = await researchAnalystAgent.RunAsync(ResearchPrompts.SampleResearchPrompt);
+                        WriteColored("\nAI Response:", Settings.ResponseColor);
                         WriteColored(response.Text, Settings.ResponseColor);
                     }
                     break;
                 case "3":
-                    await RunResearchHarnessAsync(azureOpenAIClient, azureOpenAIModelDeploymentName!, initialMode: Settings.ExecuteMode);
+                    await RunResearchHarnessAsync(azureOpenAIClient, azureOpenAIModelDeploymentName!, webIqScope.GroundingTool, initialMode: Settings.ExecuteMode);
                     break;
                 case "4":
-                    await RunResearchHarnessAsync(azureOpenAIClient, azureOpenAIModelDeploymentName!, initialMode: Settings.PlanMode);
+                    await RunResearchHarnessAsync(azureOpenAIClient, azureOpenAIModelDeploymentName!, webIqScope.GroundingTool, initialMode: Settings.PlanMode);
                     break;
             }
         }
@@ -139,35 +172,39 @@ namespace DemoMAFHarness
 
         private static void WriteColored(string text, ConsoleColor color, bool newLine = true)
         {
-            var previousColor = Console.ForegroundColor;
-            try
+            lock (ConsoleWriteLock)
             {
-                Console.ForegroundColor = color;
-                if (newLine)
+                var previousColor = Console.ForegroundColor;
+                try
                 {
-                    Console.WriteLine(text);
+                    Console.ForegroundColor = color;
+                    if (newLine)
+                    {
+                        Console.WriteLine(text);
+                    }
+                    else
+                    {
+                        Console.Write(text);
+                    }
                 }
-                else
+                finally
                 {
-                    Console.Write(text);
+                    Console.ForegroundColor = previousColor;
                 }
-            }
-            finally
-            {
-                Console.ForegroundColor = previousColor;
             }
         }
 
-        private static async Task RunResearchHarnessAsync(OpenAIClient client, string modelDeploymentName, string initialMode)
+        private static async Task RunResearchHarnessAsync(OpenAIClient client, string modelDeploymentName, AIFunction groundingTool, string initialMode)
         {
             using var responsesChatClient = client.GetResponsesClient().AsIChatClient(modelDeploymentName);
 
             var chatOptions = new ChatOptions
             {
                 Instructions = ResearchPrompts.HarnessInstructions,
-                // Add a local web browsing tool that converts html to markdown.
+                // WebIQ discovers sources; Download URI can inspect the original pages as Markdown.
                 Tools =
                 [
+                    groundingTool,
                     new WebBrowsingTool(
                         new WebBrowsingToolOptions { AllowPublicNetworks = Settings.AllowPublicNetworks }),
                 ],
@@ -205,6 +242,7 @@ namespace DemoMAFHarness
                 DisableTodoProvider = Settings.DisableTodoProvider,
                 DisableFileMemory = Settings.DisableFileMemory,
                 DisableToolAutoApproval = Settings.DisableToolAutoApproval,
+                DisableWebSearch = Settings.DisableWebSearch,
             };
 
             // Use the Responses API for the research harness's reasoning and web research capabilities.
