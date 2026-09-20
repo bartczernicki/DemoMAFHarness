@@ -11,6 +11,7 @@ using OpenAI;
 using OpenAI.Chat;
 using OpenAI.Responses;
 using System.ClientModel;
+using System.ClientModel.Primitives;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -60,7 +61,8 @@ namespace DemoMAFHarness
                 apiKeyCredential,
                 new OpenAIClientOptions
                 {
-                    Endpoint = new Uri($"{azureOpenAIEndpoint!.TrimEnd('/')}/openai/v1")
+                    Endpoint = new Uri($"{azureOpenAIEndpoint!.TrimEnd('/')}/openai/v1"),
+                    RetryPolicy = new ClientRetryPolicy(maxRetries: 5)
                 });
 
             // Instructions for the agent to follow when responding to prompts
@@ -157,7 +159,9 @@ namespace DemoMAFHarness
                 LoopAgentOptions = new LoopAgentOptions { MaxIterations = 10 }, // Safety cap on the number of autonomous passes per turn.
 
                 AgentModeProviderOptions = agentModeProviderOptions,
-                ChatOptions = chatOptions
+                ChatOptions = chatOptions,
+
+                DisableOpenTelemetry = false,  // Enable OpenTelemetry tracing for the harness agent to capture spans for all agent activity.
 
                 // DisableWebSearch = true,
             };
