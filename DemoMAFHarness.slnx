@@ -1,3 +1,6 @@
 <Solution>
+  <Project Path="ConsoleReactiveComponents/ConsoleReactiveComponents.csproj" />
+  <Project Path="ConsoleReactiveFramework/ConsoleReactiveFramework.csproj" />
   <Project Path="DemoMAFHarness/DemoMAFHarness.csproj" />
+  <Project Path="Harness_Shared_Console/Harness_Shared_Console.csproj" />
 </Solution>

@@ -88,7 +88,7 @@ namespace DemoMAFHarness
                 Reasoning = new ReasoningOptions
                 {
                     Effort = ReasoningEffort.Medium,
-                    Output = ReasoningOutput.Full
+                    Output = ReasoningOutput.Summary
                 }
             };
 
@@ -111,6 +111,8 @@ namespace DemoMAFHarness
             AIAgent decisionHarnessAgent = responsesChatClient.AsHarnessAgent(harnessAgentOptions);
             var decisionHarnessAgentResponse = await decisionHarnessAgent.RunAsync(simpleDecisionPrompt);
             Console.WriteLine(decisionHarnessAgentResponse.Text);
+
+            // https://github.com/microsoft/agent-framework/tree/main/dotnet/samples/02-agents/Harness
         }
     }
 }
