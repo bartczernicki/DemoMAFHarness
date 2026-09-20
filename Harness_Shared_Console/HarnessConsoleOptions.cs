@@ -14,6 +14,15 @@ namespace Harness.Shared.Console;
 public class HarnessConsoleOptions
 {
     /// <summary>
+    /// Gets or sets an optional message displayed in the output history when the session opens.
+    /// This is display-only and is not sent to the agent.
+    /// </summary>
+    public string? InitialMessage { get; set; }
+
+    /// <summary>Gets or sets the optional foreground color of the initial message.</summary>
+    public ConsoleColor? InitialMessageColor { get; set; }
+
+    /// <summary>
     /// Gets or sets the list of console observers that participate in the agent response
     /// streaming lifecycle. Use the factory methods on this class to create common observer sets.
     /// When <see langword="null"/> (the default), a default set of observers is used.

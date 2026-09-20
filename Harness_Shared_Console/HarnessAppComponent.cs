@@ -88,6 +88,10 @@ public class HarnessAppComponent : ConsoleReactiveComponent<ConsoleReactiveProps
     /// </summary>
     public Task ShutdownTask => this._shutdownTcs.Task;
 
+    /// <summary>Adds informational text to the console output history.</summary>
+    internal Task WriteInfoLineAsync(string text, ConsoleColor? color = null) =>
+        this._uxDriver.WriteInfoLineAsync(text, color);
+
     /// <summary>
     /// Deactivates the component, resetting the scroll region and unsubscribing from events.
     /// This method is idempotent and safe to call multiple times.

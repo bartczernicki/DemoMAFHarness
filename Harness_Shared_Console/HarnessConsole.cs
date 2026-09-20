@@ -61,6 +61,11 @@ public static class HarnessConsole
 
         try
         {
+            if (!string.IsNullOrWhiteSpace(options.InitialMessage))
+            {
+                await component.WriteInfoLineAsync(options.InitialMessage, options.InitialMessageColor).ConfigureAwait(false);
+            }
+
             await component.ShutdownTask.ConfigureAwait(false);
         }
         finally
