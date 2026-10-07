@@ -1,117 +1,83 @@
 # DemoMAFHarness
 
-Run the .NET 10 console app from its project directory:
+DemoMAFHarness is a console demonstration of Microsoft Agent Framework (MAF). It uses
+investment research to show the progression from a direct model call to an interactive
+agent harness with planning, research tools, task tracking, and coordinated background agents.
 
-```powershell
-cd DemoMAFHarness
-dotnet run
-```
+The project illustrates how a harness supports the work around an AI model: gathering
+evidence, managing a research workflow, involving the user in planning, and bringing
+findings together into a report.
 
-Choose one demo per launch: a direct model call, a research analyst agent, or a research
-harness starting in execute or plan mode. Option **5) Research Harness — Background Agents**
-runs parallel research before synthesizing a report. Use `/exit` to close a harness session.
+## Demonstrations
 
-## Configuration
-
-The app reads `local.settings.json` and then `secrets.settings.json` from the working
-directory. Store credentials in the latter; do not commit it. The required keys are:
-
-| Key | Purpose |
+| Demonstration | What it shows |
 | --- | --- |
-| `AzureOpenAI:Endpoint` | Azure OpenAI resource endpoint |
-| `AzureOpenAI:APIKey` | Model API credential |
-| `AzureOpenAI:ModelDeploymentName` | Model deployment name |
-| `AzureOpenAI:WebIQGroundingAPIKey` | WebIQ MCP credential, sent only in the `x-apikey` header |
+| Direct Model Call | Answers a sample investment research question with access to web grounding. |
+| Research Analyst Agent | Performs the sample research task through a dedicated analyst agent. |
+| Research Harness — Execute Mode | Runs an interactive research workflow for a user-provided investment topic. |
+| Research Harness — Plan Mode | Proposes a research plan for user review and approval before execution. |
+| Research Harness — Background Agents | Delegates focused assignments to parallel research workers and combines their findings into one report. |
 
-`WebIQ:McpEndpoint` optionally overrides the default `https://api.microsoft.ai/v3/mcp/`.
-It must be an absolute HTTPS URL without embedded credentials. For example, the default
-can be specified in `local.settings.json` as:
+The first two demonstrations use a predefined question. The three harness demonstrations
+support ongoing conversation and user-selected research topics.
 
-```json
-{
-  "WebIQ": {
-    "McpEndpoint": "https://api.microsoft.ai/v3/mcp/"
-  }
-}
-```
+## Harness capabilities
 
-Other app defaults live in `Settings.cs`; research instructions and the sample request
-live in `Prompts/ResearchPrompts.cs`. All five demos use medium reasoning and a 200-second
-AI network-request timeout; retries and multi-call research runs can take longer overall.
-All demos use the Responses API so reasoning and function tools work together on the configured model.
-WebIQ setup and each grounding call have a 60-second
-timeout. Selecting Exit does not connect to WebIQ or initialize telemetry.
+- **Web research:** discovers relevant sources through WebIQ and can inspect original
+  source pages for additional context and verification. In the background-agent
+  demonstration, workers perform this research on behalf of the coordinator.
+- **Planning and approval:** in plan mode, supports clarification questions, review of
+  proposed plans, and a transition to execution after approval.
+- **Task tracking:** maintains a research task list and shows progress during the workflow.
+- **Parallel research:** the background-agent demonstration divides broader questions
+  into focused assignments, gathers worker findings, and synthesizes them into a coherent
+  report with source links.
+- **Report memory:** can save completed reports for continued use during the research workflow.
+- **Session management:** supports starting fresh conversations and exporting or importing
+  conversation sessions.
+- **Visible activity:** streams responses and displays tool activity, agent status, and
+  token usage in the console.
 
-## Research Tools
+All five demonstrations also record telemetry to help inspect model and tool activity.
 
-Options 1–4 and option 5's research workers expose the local `WebIQGrounding` function. It invokes the MCP server's
-discovered `web` tool over Streamable HTTP, preserving its argument schema, source
-content, and URLs. Options 1 and 2 automatically execute tool calls before completing
-their responses.
+## Research output
 
-Options 3 and 4 also retain `DownloadUri` for inspecting source pages as Markdown.
-The harness considers WebIQ for source discovery and Download URI for deeper verification;
-its built-in web search is disabled. Other remote MCP tools are not exposed. Reports use
-the investment analyst format and Markdown source links; harness reports are also saved
-to file memory.
+The research instructions emphasize credible evidence, source freshness, and investment
+relevance. Agents are instructed to cite major claims, distinguish facts from market
+consensus and analysis, explain conflicting findings, and disclose uncertainty or missing
+evidence. Research can address current conditions or an explicitly requested historical cutoff.
 
-Missing credentials, connection/authentication failures, or a missing `web` tool stop
-startup with a concise error. Grounding failures are reported without remote exception
-details, and cancellation is preserved. Research output must disclose any verification gaps.
+Completed reports are intended to follow six sections:
 
-## Background Research
+1. Executive Summary
+2. Key Market Drivers
+3. Investment Implications
+4. Risks & Counterarguments
+5. What to Watch Next
+6. Sources
 
-Option 5 starts in execute mode. Enter any investment topic, including the sample AI
-infrastructure question. The `ResearchCoordinator` interprets natural-language requests,
-lists, company/ticker sets, comparisons, and multiple questions, then chooses the number
-of assignments needed. It merges duplicate topics, separates research subjects from
-formatting instructions, and briefly explains the topic breakdown before delegating.
-A narrow question can use one worker; broader requests can use as many complementary
-assignments as needed, with further tasks added when evidence reveals a gap.
+Harness agents are instructed to return the completed report to the user and save the
+same report in memory. In the background-agent demonstration, the coordinator combines
+worker evidence into the final report, covering the requested topics and comparisons.
 
-Each assignment runs on `ResearchWorker` in its own session using the framework's
-`BackgroundAgentsProvider`. `Settings.MaxConcurrentResearchWorkers` limits simultaneous
-worker runs to four by default; additional assignments queue and start as slots free up.
-This limits concurrency, not the number of topics or total assignments. Queued work also
-honors cancellation during session cleanup. Existing iteration and request limits still apply.
+## Example research questions
 
-Workers use WebIQ for discovery and Download URI for original-page inspection. They
-have no planning, todos, file memory, or further delegation. The coordinator uses the
-background-task tools to start work, wait, retrieve results, and request focused
-follow-ups. It reconciles evidence and saves and returns one report with the six
-investment research sections and Markdown source links, disclosing unresolved gaps.
-The final synthesis covers every requested topic and comparison, including their
-relationships and tradeoffs where relevant.
-Completed task records are cleared after their results have been incorporated.
+The sample question explores AI infrastructure across several industries:
 
-All research instructions include the application's current UTC date. The coordinator
-passes a consistent research as-of date to workers; an explicit historical cutoff in
-the user's request takes precedence. Different fiscal periods or stale sources must be
-explained rather than silently moving current research to an older baseline.
+> Analyze AI infrastructure spending and its investment implications for semiconductor companies, cloud providers, and power suppliers over the next 12–24 months.
 
-All demos use client-managed Responses history (`store: false`) with encrypted reasoning
-included for subsequent turns. Worker continuations and coordinator tool loops therefore
-do not depend on Azure retaining a `previous_response_id`. Start a new session after
-upgrading; old session exports may still reference server-stored conversations.
-API quotas still apply: repeated WebIQ or model throttling can leave verification gaps
-or stop a run after the configured retries. Details are recorded in the Telemetry log.
+Additional questions apply the harness's investment research perspective to other domains:
 
-The console shows background-task activity; worker model and tool details are recorded
-in telemetry. The coordinator retains `/mode`, planning approval, todos, and session
-commands. `/exit` also works while background research is running. Closing or replacing
-a session cancels and releases its background work before clients are disposed. Fatal
-coordinator failures close the session and cancel outstanding work.
+| Area | Example research question |
+| --- | --- |
+| Risk | What credit, liquidity, and refinancing risks could affect U.S. regional banks with commercial real estate exposure over the next 12 months, and which indicators would signal deterioration? |
+| Legal and regulation | Which current and proposed AI regulations in the U.S. and EU could materially affect enterprise software companies over the next 24 months? Distinguish binding requirements from proposals and assess potential costs and legal uncertainties. |
+| Finance | Compare Microsoft, Alphabet, and Amazon using their latest reported revenue growth, free cash flow, debt, and capital spending. Which assumptions most influence their valuations, and how do reporting periods differ? |
+| AI | What evidence supports or challenges the business case for AI agents in enterprise software over the next 12–24 months? Compare adoption, customer returns, inference costs, and implications for software company margins. |
+| Cybersecurity | How could ransomware and third-party security failures affect U.S. healthcare providers and cyber insurers over the next 12 months? Evaluate financial exposure, mitigation costs, and indicators investors should monitor. |
+| Energy | Could U.S. electricity generation and grid capacity constrain data center expansion over the next three years? Compare the implications for utilities, power equipment suppliers, and cloud providers. |
+| Supply chains | Assess how semiconductor supply concentration and export restrictions could affect chip designers, foundries, and equipment suppliers over the next 24 months. Compare disruption scenarios and potential mitigations. |
+| Healthcare | Compare the commercial outlook for obesity treatments in the U.S. over the next three years, considering clinical evidence, competition, reimbursement, manufacturing capacity, and implications for drugmakers and health insurers. |
 
-This follows Microsoft's [background-agent research sample](https://github.com/microsoft/agent-framework/blob/main/dotnet/samples/02-agents/Harness/Harness_Step02_Research_WithBackgroundAgents/Program.cs),
-adapted to the investment analyst prompts and WebIQ grounding. Agent names, concurrency,
-and worker provider settings live in `Settings.cs`.
-
-## Telemetry
-
-Each selected demo writes OpenTelemetry logs to `Telemetry` beside the executable.
-Credential headers, including WebIQ's `x-apikey`, are redacted. SSE response bodies are
-not buffered or logged; HTTP spans, headers, and nonstreaming bodies remain available.
-Logs can contain research prompts and results. Existing log files are left untouched.
-
-The MCP integration follows the [reference WebIQ provider](https://github.com/bartczernicki/MachineLearning-BaseballPrediction-BlazorApp/blob/master/src/BaseballAIWorkbench/BaseballAIWorkbench.ApiService/WebIqMcpToolProvider.cs)
-and uses `ModelContextProtocol` 2.2.0.
+These questions invite evidence-based comparisons of opportunities, risks, and signals
+to monitor, with source links and explicit discussion of unresolved questions.
